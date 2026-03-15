@@ -1,9 +1,4 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-
-function getOpenAI() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
 
 interface WeatherData {
   temp: string;
@@ -41,6 +36,11 @@ function getDayOfWeek(day: number): string {
 
 export async function POST(request: Request) {
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY not configured");
+    }
+
     const body = await request.json().catch(() => ({}));
     const existingMenus: string[] = body.existingMenus ?? [];
 
@@ -77,14 +77,28 @@ export async function POST(request: Request) {
   ]
 }`;
 
-    const completion = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      response_format: { type: "json_object" },
-    });
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.8,
+            responseMimeType: "application/json",
+          },
+        }),
+      }
+    );
 
-    const content = completion.choices[0].message.content;
+    if (!res.ok) {
+      throw new Error(`Gemini API error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
     if (!content) {
       return NextResponse.json(
         { error: "AI 응답이 비어있습니다." },
